@@ -69,7 +69,7 @@ IMPORTANT:
 """.strip()
 
 
-@agent("marketing-agent", title="Creative Marketing Agent")
+@agent("marketing-agent", title="Creative Marketing Agent", auth=False)
 async def chat(context):
     from claude_agent_sdk import ClaudeSDKClient, ClaudeAgentOptions, AgentDefinition, AssistantMessage, TextBlock
     import os
@@ -87,7 +87,7 @@ async def chat(context):
         model="claude-sonnet-4-5",
         system_prompt=MAIN_AGENT_PROMPT,
         # Task tool is required for subagent invocation
-        allowed_tools=["Task", "Read", "Write", "Bash"],
+        allowed_tools=["Task"],
         agents={
             "brief-analyzer": AgentDefinition(
                 description="Marketing brief analyzer and structurer. Use for analyzing user requests and creating structured marketing briefs with all necessary details.",
@@ -111,7 +111,6 @@ async def chat(context):
                     "4. End with: 'Is this accurate?'\n\n"
                     "Be direct. No unnecessary text."
                 ),
-                tools=["Read", "Write"],
                 model="sonnet",
             ),
             "market-researcher": AgentDefinition(
@@ -155,7 +154,6 @@ async def chat(context):
                     "4. Brief posting strategy (timing, frequency)\n\n"
                     "No explanations. Just deliver the posts."
                 ),
-                tools=["Read", "Write"],
                 model="sonnet",
             ),
         },
@@ -190,7 +188,6 @@ async def chat(context):
                 yield message
 
 
-agent.deploy(prod=False)
-
-# agent.local()
+# agent.deploy(prod=False)
+agent.local()
 # agent.deploy(prod=True)
