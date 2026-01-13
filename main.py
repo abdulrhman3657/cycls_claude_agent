@@ -2,8 +2,9 @@ import os
 from pathlib import Path
 import cycls
 
-
+# ---------------------------
 # Env helper
+# ---------------------------
 def get_env(key: str) -> str | None:
     val = os.getenv(key)
     if val:
@@ -34,12 +35,72 @@ def get_env(key: str) -> str | None:
     return None
 
 
+# ---------------------------
+# Cycls Agent
+# ---------------------------
 # cycls==0.0.2.62
 agent = cycls.Agent(
-    pip=["anthropic", "claude-agent-sdk", "python-dotenv"],
+    pip=["claude-agent-sdk", "python-dotenv"],
     copy=[".env"],
-    key=get_env("CYCLS_API_KEY")
+    key=get_env("CYCLS_API_KEY"),
 )
+
+
+# ---------------------------
+# Claude session store (in-memory)
+# ---------------------------
+# NOTE:
+# - Works great for agent.local() and single-container deploys.
+# - If you scale to multiple replicas, use Redis/DB for shared session storage.
+CLAUDE_SESSIONS: dict[str, str] = {}
+
+
+def conversation_key_from_context(context) -> str:
+    """
+    Derive a stable conversation key.
+    Best: authenticated user id (if auth=True in Cycls and JWT user exists).
+    Otherwise: read a client-provided conversation_id from message metadata (recommended).
+    Fallback: a single shared key (fine for local dev, bad for multi-user).
+    """
+    # 1) Authenticated user id (best)
+    if getattr(context, "user", None) and getattr(context.user, "id", None):
+        return f"user:{context.user.id}"
+
+    # 2) Client-provided conversation id (recommended for auth=False)
+    last = context.messages[-1] if context.messages else {}
+    metadata = last.get("metadata") or {}
+    conv_id = metadata.get("conversation_id")
+    if conv_id:
+        return f"conv:{conv_id}"
+
+    # 3) Weak fallback (all anon users share one session)
+    return "anon:default"
+
+
+def extract_stream_text(message):
+    """
+    Best-effort extraction of text from Claude Agent SDK streamed message objects.
+    Yields text chunks only; ignores init/system metadata.
+    """
+    if hasattr(message, "text") and message.text:
+        yield message.text
+        return
+
+    if hasattr(message, "content"):
+        content = message.content
+        if isinstance(content, str) and content:
+            yield content
+            return
+        if isinstance(content, list):
+            for block in content:
+                if hasattr(block, "text") and block.text:
+                    yield block.text
+                elif isinstance(block, dict) and block.get("text"):
+                    yield block["text"]
+            return
+
+    if isinstance(message, str) and message:
+        yield message
 
 MAIN_AGENT_PROMPT = """
 You are a Creative Marketing Strategist coordinating a multi-step workflow.
@@ -64,25 +125,30 @@ IMPORTANT:
 """.strip()
 
 
+# ---------------------------
+# Agent endpoint
+# ---------------------------
 @agent("marketing-agent", title="Creative Marketing Agent", auth=False)
 async def chat(context):
-    from claude_agent_sdk import ClaudeSDKClient, ClaudeAgentOptions, AgentDefinition, AssistantMessage, TextBlock
-    import os
+    from claude_agent_sdk import query, ClaudeAgentOptions, AgentDefinition
 
-    # Ensure ANTHROPIC_API_KEY is in environment (Claude Agent SDK reads from env)
+    # Ensure ANTHROPIC_API_KEY is in env (Claude Agent SDK reads env)
     api_key = get_env("ANTHROPIC_API_KEY")
     if api_key:
         os.environ["ANTHROPIC_API_KEY"] = api_key
 
-    # Get the user's latest message
+    # Latest user message
     user_message = context.messages[-1]["content"] if context.messages else ""
 
-    # Configure main marketing agent with subagent definitions
+    # Session resumption
+    convo_key = conversation_key_from_context(context)
+    resume_id = CLAUDE_SESSIONS.get(convo_key)
+
+    # Configure main agent + subagent
     options = ClaudeAgentOptions(
-        model="claude-haiku-4-5-20251001",
+        model="claude-haiku-4-5",
         system_prompt=MAIN_AGENT_PROMPT,
-        # Task tool is required for subagent invocation
-        allowed_tools=["Task"],
+        allowed_tools=["Task"],  # used for subagent invocation
         agents={
             "brief-analyzer": AgentDefinition(
                 description="Marketing brief analyzer and structurer. Use for analyzing user requests and creating structured marketing briefs with all necessary details.",
@@ -106,7 +172,7 @@ async def chat(context):
                     "4. End with ONLY: 'Is this accurate?'\n\n"
                     "IMPORTANT: Do not ask questions. Fill missing info yourself. Only ask for confirmation once at the end."
                 ),
-                model="claude-haiku-4-5-20251001",
+                model="claude-haiku-4-5",
             ),
             "market-researcher": AgentDefinition(
                 description="Expert market research specialist for competitor analysis. Use for analyzing competitors, market trends, and generating marketing ideas.",
@@ -138,7 +204,7 @@ async def chat(context):
                     "   [Description]\n\n"
                     "IMPORTANT: Do not ask questions. Generate all 4 ideas directly based on the brief."
                 ),
-                model="claude-haiku-4-5-20251001",
+                model="claude-haiku-4-5",
             ),
             "social-media-writer": AgentDefinition(
                 description="Social media content creator specializing in engaging posts. Use for generating social media content based on chosen marketing idea.",
@@ -171,49 +237,35 @@ async def chat(context):
                     "   Visual: [suggestion]\n\n"
                     "IMPORTANT: Do not ask questions. Generate all 4 posts directly based on the chosen idea."
                 ),
-                model="claude-haiku-4-5-20251001",
+                model="claude-haiku-4-5",
             ),
         },
+        # Resume prior session if known (memory)
+        resume=resume_id,
     )
 
-    # Use ClaudeSDKClient for conversation memory
-    # ClaudeSDKClient maintains session state across queries in the same session
-    async with ClaudeSDKClient(options=options) as client:
-        # Send all previous messages to rebuild conversation history
-        for msg in context.messages[:-1]:  # All messages except the current one
-            role = msg.get("role", "user")
-            content = msg.get("content", "")
-            if content and role == "user":
-                # Send previous user messages to rebuild context
-                await client.query(content)
-                # Drain assistant responses (don't yield them, just rebuild state)
-                async for _ in client.receive_response():
-                    pass
+    async for message in query(prompt=user_message, options=options):
+        # Capture session_id from init system message (official pattern)
+        if hasattr(message, "subtype") and message.subtype == "init":
+            sid = (getattr(message, "data", None) or {}).get("session_id")
+            if sid:
+                CLAUDE_SESSIONS[convo_key] = sid
+            continue  # don't stream init metadata
 
-        # Send the current user message
-        await client.query(user_message)
+        # Check for subagent invocation in message content
+        if hasattr(message, 'content') and message.content:
+            for block in message.content:
+                if getattr(block, 'type', None) == 'tool_use' and getattr(block, 'name', None) == 'Task':
+                    subagent_type = block.input.get('subagent_type', 'unknown')
+                    print(f"\n🤖 Subagent invoked: {subagent_type}")
 
-        # Stream the response
-        async for message in client.receive_response():
-            # Check for subagent invocation in message content
-            if hasattr(message, 'content') and message.content:
-                for block in message.content:
-                    if getattr(block, 'type', None) == 'tool_use' and getattr(block, 'name', None) == 'Task':
-                        subagent_type = block.input.get('subagent_type', 'unknown')
-                        print(f"\n🤖 Subagent invoked: {subagent_type}")
+        # Check if this message is from within a subagent's context
+        if hasattr(message, 'parent_tool_use_id') and message.parent_tool_use_id:
+            print("  (running inside subagent)")
 
-            # Check if this message is from within a subagent's context
-            if hasattr(message, 'parent_tool_use_id') and message.parent_tool_use_id:
-                print("  (running inside subagent)")
-
-            if isinstance(message, AssistantMessage):
-                for block in message.content:
-                    if isinstance(block, TextBlock):
-                        yield block.text
-            elif hasattr(message, 'text'):
-                yield message.text
-            elif isinstance(message, str):
-                yield message
+        # Stream text chunks
+        for text in extract_stream_text(message):
+            yield text
 
 
 # agent.deploy(prod=False)
