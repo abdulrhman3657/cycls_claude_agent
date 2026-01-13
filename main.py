@@ -245,6 +245,9 @@ async def chat(context):
     )
 
     async for message in query(prompt=user_message, options=options):
+
+        # print(message) # dump all of the output
+
         # Capture session_id from init system message (official pattern)
         if hasattr(message, "subtype") and message.subtype == "init":
             sid = (getattr(message, "data", None) or {}).get("session_id")
@@ -257,7 +260,7 @@ async def chat(context):
             for block in message.content:
                 if getattr(block, 'type', None) == 'tool_use' and getattr(block, 'name', None) == 'Task':
                     subagent_type = block.input.get('subagent_type', 'unknown')
-                    print(f"\n🤖 Subagent invoked: {subagent_type}")
+                    print(f"\n Subagent invoked: {subagent_type}")
 
         # Check if this message is from within a subagent's context
         if hasattr(message, 'parent_tool_use_id') and message.parent_tool_use_id:
