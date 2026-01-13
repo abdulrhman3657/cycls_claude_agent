@@ -195,6 +195,17 @@ async def chat(context):
 
         # Stream the response
         async for message in client.receive_response():
+            # Check for subagent invocation in message content
+            if hasattr(message, 'content') and message.content:
+                for block in message.content:
+                    if getattr(block, 'type', None) == 'tool_use' and getattr(block, 'name', None) == 'Task':
+                        subagent_type = block.input.get('subagent_type', 'unknown')
+                        print(f"\n🤖 Subagent invoked: {subagent_type}")
+
+            # Check if this message is from within a subagent's context
+            if hasattr(message, 'parent_tool_use_id') and message.parent_tool_use_id:
+                print("  (running inside subagent)")
+
             if isinstance(message, AssistantMessage):
                 for block in message.content:
                     if isinstance(block, TextBlock):
