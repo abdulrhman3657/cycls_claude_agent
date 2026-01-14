@@ -46,63 +46,6 @@ agent = cycls.Agent(
 )
 
 
-# ---------------------------
-# Claude session store (in-memory)
-# ---------------------------
-# NOTE:
-# - Works great for agent.local() and single-container deploys.
-# - If you scale to multiple replicas, use Redis/DB for shared session storage.
-CLAUDE_SESSIONS: dict[str, str] = {}
-
-
-def conversation_key_from_context(context) -> str:
-    """
-    Derive a stable conversation key.
-    Best: authenticated user id (if auth=True in Cycls and JWT user exists).
-    Otherwise: read a client-provided conversation_id from message metadata (recommended).
-    Fallback: a single shared key (fine for local dev, bad for multi-user).
-    """
-    # 1) Authenticated user id (best)
-    if getattr(context, "user", None) and getattr(context.user, "id", None):
-        return f"user:{context.user.id}"
-
-    # 2) Client-provided conversation id (recommended for auth=False)
-    last = context.messages[-1] if context.messages else {}
-    metadata = last.get("metadata") or {}
-    conv_id = metadata.get("conversation_id")
-    if conv_id:
-        return f"conv:{conv_id}"
-
-    # 3) Weak fallback (all anon users share one session)
-    return "anon:default"
-
-
-def extract_stream_text(message):
-    """
-    Best-effort extraction of text from Claude Agent SDK streamed message objects.
-    Yields text chunks only; ignores init/system metadata.
-    """
-    if hasattr(message, "text") and message.text:
-        yield message.text
-        return
-
-    if hasattr(message, "content"):
-        content = message.content
-        if isinstance(content, str) and content:
-            yield content
-            return
-        if isinstance(content, list):
-            for block in content:
-                if hasattr(block, "text") and block.text:
-                    yield block.text
-                elif isinstance(block, dict) and block.get("text"):
-                    yield block["text"]
-            return
-
-    if isinstance(message, str) and message:
-        yield message
-
-
 MAIN_AGENT_PROMPT = """
 You are a Creative Marketing Strategist coordinating a multi-step workflow.
 
@@ -289,7 +232,7 @@ IMPORTANT:
 # ---------------------------
 @agent("creative-marketing-strategist", title="Creative Marketing Agent", auth=True)
 async def chat(context):
-    from claude_agent_sdk import query, ClaudeAgentOptions, AgentDefinition
+    from claude_agent_sdk import query, ClaudeAgentOptions, AgentDefinition, AssistantMessage, TextBlock
 
     # Ensure ANTHROPIC_API_KEY is in env (Claude Agent SDK reads env)
     api_key = get_env("ANTHROPIC_API_KEY")
@@ -299,16 +242,13 @@ async def chat(context):
     # Latest user message
     user_message = context.messages[-1]["content"] if context.messages else ""
 
-    # Session resumption
-    convo_key = conversation_key_from_context(context)
-    resume_id = CLAUDE_SESSIONS.get(convo_key)
-
-    # Configure main agent + subagents
+    # Configure main agent with subagents
     # NOTE: Using sonnet for main agent to ensure reliable routing to custom subagents
     options = ClaudeAgentOptions(
         model="sonnet",
         system_prompt=MAIN_AGENT_PROMPT,
         allowed_tools=["Task", "WebSearch", "WebFetch"],
+        continue_conversation=True,
         agents={
             "brief-analyzer": AgentDefinition(
                 description="REQUIRED for step 1. Analyzes and structures marketing briefs. Always use this agent FIRST when given any marketing brief or campaign request. Do not use general-purpose for brief analysis.",
@@ -335,107 +275,16 @@ async def chat(context):
                 tools=["WebSearch", "WebFetch"],
             ),
         },
-        # Resume prior session if known (memory)
-        resume=resume_id,
     )
 
-    # Buffer for main agent text (to handle text that precedes Task delegation)
-    main_agent_buffer = []
-
+    # Stream responses - Agent SDK handles tool execution autonomously
     async for message in query(prompt=user_message, options=options):
-        msg_type = type(message).__name__
-
-        # DEBUG
-        print(f"\n[DEBUG] msg_type={msg_type}")
-        if msg_type == "AssistantMessage":
-            parent_id = getattr(message, "parent_tool_use_id", None)
-            print(f"[DEBUG] parent_tool_use_id={parent_id}")
-            print(f"[DEBUG] buffer_len={len(main_agent_buffer)}")
-            content = getattr(message, "content", []) or []
-            for i, block in enumerate(content):
-                class_name = type(block).__name__
-                block_name = getattr(block, "name", None)
-                print(f"[DEBUG]   block[{i}]: class={class_name}, name={block_name}")
-                # If it's a Task, show the subagent_type
-                if class_name == "ToolUseBlock" and block_name == "Task":
-                    task_input = getattr(block, "input", {}) or {}
-                    print(f"[DEBUG]   -> subagent_type={task_input.get('subagent_type')}")
-
-        # Capture session_id from init system message
-        if hasattr(message, "subtype") and message.subtype == "init":
-            sid = (getattr(message, "data", None) or {}).get("session_id")
-            if sid:
-                CLAUDE_SESSIONS[convo_key] = sid
-            continue
-
-        # Skip ResultMessage (final status)
-        if msg_type == "ResultMessage":
-            continue
-
-        # Skip UserMessage (internal tool results)
-        if msg_type == "UserMessage":
-            continue
-
-        # Handle AssistantMessage
-        if msg_type == "AssistantMessage":
-            parent_id = getattr(message, "parent_tool_use_id", None)
-            content = getattr(message, "content", []) or []
-
-            # Check if this is a Task delegation (use class name, not .type)
-            task_info = None
-            for block in content:
-                class_name = type(block).__name__
-                block_name = getattr(block, "name", None)
-                if class_name == "ToolUseBlock" and block_name == "Task":
-                    task_input = getattr(block, "input", {}) or {}
-                    subagent = task_input.get("subagent_type", "unknown")
-                    description = task_input.get("description", "")
-                    prompt = task_input.get("prompt", "")
-                    task_info = (subagent, description, prompt)
-
-            # Main agent messages (parent_id is None)
-            if parent_id is None:
-                if task_info:
-                    # Task delegation - format buffered text + delegation + prompt as code block
-                    subagent, description, prompt = task_info
-                    buffered = "".join(main_agent_buffer).strip()
-                    main_agent_buffer.clear()
-
-                    # Build the delegation block
-                    parts = []
-                    if buffered:
-                        parts.append(f"💭 {buffered}")
-                    parts.append(f"🔄 Delegating to: {subagent} - {description}")
-                    if prompt:
-                        parts.append(f"\n📝 Prompt to subagent:\n{prompt}")
-
-                    yield f"\n```\n{chr(10).join(parts)}\n```\n"
-                    continue
-
-                # Collect main agent text into buffer (might precede a Task)
-                for text in extract_stream_text(message):
-                    main_agent_buffer.append(text)
-                continue
-
-            # Messages from subagents (parent_id is set)
-            # First, flush any buffered main agent text as code block
-            if main_agent_buffer:
-                buffered = "".join(main_agent_buffer).strip()
-                main_agent_buffer.clear()
-                if buffered:
-                    yield f"\n```\n💭 {buffered}\n```\n"
-
-            # Stream subagent output normally
-            for text in extract_stream_text(message):
-                yield text
-
-    # Flush any remaining buffered text at the end (main agent's final response)
-    if main_agent_buffer:
-        buffered = "".join(main_agent_buffer).strip()
-        if buffered:
-            yield buffered
+        if isinstance(message, AssistantMessage):
+            for block in message.content:
+                if isinstance(block, TextBlock):
+                    yield block.text
 
 
-agent.deploy(prod=False)
+agent.deploy(prod=True)
 # agent.local()
 # agent.deploy(prod=True)
