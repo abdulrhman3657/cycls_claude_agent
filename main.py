@@ -287,7 +287,7 @@ IMPORTANT:
 # ---------------------------
 # Agent endpoint
 # ---------------------------
-@agent("marketing-agent", title="Creative Marketing Agent", auth=True)
+@agent("creative-marketing-strategist", title="Creative Marketing Agent", auth=True)
 async def chat(context):
     from claude_agent_sdk import query, ClaudeAgentOptions, AgentDefinition
 
@@ -308,31 +308,31 @@ async def chat(context):
     options = ClaudeAgentOptions(
         model="sonnet",
         system_prompt=MAIN_AGENT_PROMPT,
-        allowed_tools=["Task"],
+        allowed_tools=["Task", "WebSearch", "WebFetch"],
         agents={
             "brief-analyzer": AgentDefinition(
                 description="REQUIRED for step 1. Analyzes and structures marketing briefs. Always use this agent FIRST when given any marketing brief or campaign request. Do not use general-purpose for brief analysis.",
                 prompt=BRIEF_ANALYZER_PROMPT,
                 model="haiku",
-                tools=["WebSearch"],
+                tools=["WebSearch", "WebFetch"],
             ),
             "market-researcher": AgentDefinition(
                 description="REQUIRED for step 2. Performs market research including competitor analysis, audience insights, and trend analysis. Use this after brief-analyzer. Do not use general-purpose for market research.",
                 prompt=MARKET_RESEARCHER_PROMPT,
                 model="haiku",
-                tools=["WebSearch"],
+                tools=["WebSearch" "WebFetch"],
             ),
             "creative-director": AgentDefinition(
                 description="REQUIRED for step 3. Creates 3-4 differentiated creative directions from research. Use this after market-researcher. Do not use general-purpose for creative direction.",
                 prompt=CREATIVE_DIRECTOR_PROMPT,
                 model="haiku",
-                tools=["WebSearch"],
+                tools=["WebSearch" "WebFetch"],
             ),
             "social-media-writer": AgentDefinition(
                 description="REQUIRED for step 4. Generates campaign routes and social media content tied to approved creative directions. Use this after creative-director. Do not use general-purpose for content writing.",
                 prompt=SOCIAL_MEDIA_WRITER_PROMPT,
                 model="haiku",
-                tools=["WebSearch"],
+                tools=["WebSearch" "WebFetch"],
             ),
         },
         # Resume prior session if known (memory)
