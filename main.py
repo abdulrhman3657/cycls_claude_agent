@@ -106,29 +106,38 @@ def extract_stream_text(message):
 MAIN_AGENT_PROMPT = """
 You are a Creative Marketing Strategist coordinating a multi-step workflow.
 
-Core principles:
-- You are responsible for output quality and strategic coherence.
-- Prefer specificity over generic marketing talk.
-- Ensure a clear chain: Brief → Research Insights → Creative Directions → Campaign Routes.
-- If any stage output is generic, inconsistent, or unusable, re-run that stage once with stricter constraints.
-- Do not advance stages unless the current stage meets the quality bar.
+=== AVAILABLE CUSTOM AGENTS ===
+You have access to these specialized agents via the Task tool. You MUST use these agents - do NOT use "general-purpose".
 
-Workflow (gated):
-1) Delegate to 'brief-analyzer'
+| subagent_type       | When to use                                              |
+|---------------------|----------------------------------------------------------|
+| brief-analyzer      | FIRST step - analyze and structure any marketing brief   |
+| market-researcher   | SECOND step - research market, competitors, audience     |
+| creative-director   | THIRD step - create 3-4 creative directions              |
+| social-media-writer | FOURTH step - generate campaign routes from directions   |
+
+CRITICAL: When using the Task tool, set subagent_type to EXACTLY one of: "brief-analyzer", "market-researcher", "creative-director", "social-media-writer"
+NEVER use subagent_type="general-purpose" - always use the specific agent for the task.
+
+=== WORKFLOW ===
+1) Use subagent_type="brief-analyzer" to analyze the brief
 2) Present brief to user and ask for confirmation ("Is this accurate?")
-3) If confirmed, delegate to 'market-researcher'
+3) If confirmed, use subagent_type="market-researcher" for research
 4) Summarize research for user; ask if they want to proceed
-5) Delegate to 'creative-director' to produce 3-4 approved creative directions
-6) Delegate to 'social-media-writer' to generate 4 campaign routes based on approved directions
+5) Use subagent_type="creative-director" to produce 3-4 approved creative directions
+6) Use subagent_type="social-media-writer" to generate 4 campaign routes
 7) Present routes; user chooses what to develop further
 
-Quality bar to advance:
+=== QUALITY BAR ===
 - Brief: concrete audience + goal + offer + constraints; assumptions clearly labeled.
 - Research: includes at least 1 counterintuitive insight or overlooked opportunity and clear creative implications.
 - Creative directions: 3-4 distinct tensions/hooks, differentiated vs competitors.
 - Campaign routes: each ties back to a specific direction + insight; includes why it will outperform typical competitor content.
 
-Communication style:
+If any stage output is generic, inconsistent, or unusable, re-run that stage once with stricter constraints.
+Do not advance stages unless the current stage meets the quality bar.
+
+=== COMMUNICATION STYLE ===
 - Get straight to the point
 - No unnecessary explanations
 - Clear, scannable sections
@@ -294,34 +303,35 @@ async def chat(context):
     convo_key = conversation_key_from_context(context)
     resume_id = CLAUDE_SESSIONS.get(convo_key)
 
-    # Configure main agent + subagents (no tools for subagents - text only)
+    # Configure main agent + subagents
+    # NOTE: Using sonnet for main agent to ensure reliable routing to custom subagents
     options = ClaudeAgentOptions(
-        model="claude-haiku-4-5",
+        model="sonnet",
         system_prompt=MAIN_AGENT_PROMPT,
         allowed_tools=["Task"],
         agents={
             "brief-analyzer": AgentDefinition(
-                description="Marketing brief analyzer and structurer. Use this to analyze and structure marketing briefs.",
+                description="REQUIRED for step 1. Analyzes and structures marketing briefs. Always use this agent FIRST when given any marketing brief or campaign request. Do not use general-purpose for brief analysis.",
                 prompt=BRIEF_ANALYZER_PROMPT,
-                model="claude-haiku-4-5",
+                model="haiku",
                 tools=["WebSearch"],
             ),
             "market-researcher": AgentDefinition(
-                description="Market research specialist for competitor/audience/trends and creative implications.",
+                description="REQUIRED for step 2. Performs market research including competitor analysis, audience insights, and trend analysis. Use this after brief-analyzer. Do not use general-purpose for market research.",
                 prompt=MARKET_RESEARCHER_PROMPT,
-                model="claude-haiku-4-5",
+                model="haiku",
                 tools=["WebSearch"],
             ),
             "creative-director": AgentDefinition(
-                description="Creative Director who approves 3-4 differentiated creative directions from research.",
+                description="REQUIRED for step 3. Creates 3-4 differentiated creative directions from research. Use this after market-researcher. Do not use general-purpose for creative direction.",
                 prompt=CREATIVE_DIRECTOR_PROMPT,
-                model="claude-haiku-4-5",
+                model="haiku",
                 tools=["WebSearch"],
             ),
             "social-media-writer": AgentDefinition(
-                description="Social media writer who generates campaign routes tied to approved creative directions.",
+                description="REQUIRED for step 4. Generates campaign routes and social media content tied to approved creative directions. Use this after creative-director. Do not use general-purpose for content writing.",
                 prompt=SOCIAL_MEDIA_WRITER_PROMPT,
-                model="claude-haiku-4-5",
+                model="haiku",
                 tools=["WebSearch"],
             ),
         },
