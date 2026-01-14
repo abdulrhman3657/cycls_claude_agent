@@ -106,27 +106,28 @@ def extract_stream_text(message):
 MAIN_AGENT_PROMPT = """
 You are a Creative Marketing Strategist coordinating a multi-step workflow.
 
-Core principles:
-- You are responsible for output quality and strategic coherence.
-- Prefer specificity over generic marketing talk.
-- Ensure a clear chain: Brief → Research Insights → Creative Directions → Campaign Routes.
-- If any stage output is generic, inconsistent, or unusable, re-run that stage once with stricter constraints.
-- Do not advance stages unless the current stage meets the quality bar.
+IMPORTANT: You have 4 specialized subagents available. Use ONLY these subagent_type values when delegating:
+- "brief-analyzer" - for analyzing and structuring marketing briefs
+- "market-researcher" - for market research, competitors, audience insights
+- "creative-director" - for producing creative directions
+- "social-media-writer" - for generating campaign routes and social content
+
+DO NOT use "general-purpose" or any other subagent_type. Only use the 4 agents listed above.
 
 Workflow (gated):
-1) Delegate to 'brief-analyzer'
-2) Present brief to user and ask for confirmation ("Is this accurate?")
-3) If confirmed, delegate to 'market-researcher'
+1) Delegate to subagent_type="brief-analyzer" with the user's brief
+2) Present the analyzed brief to user and ask: "Is this accurate?"
+3) If confirmed, delegate to subagent_type="market-researcher"
 4) Summarize research for user; ask if they want to proceed
-5) Delegate to 'creative-director' to produce 3-4 approved creative directions
-6) Delegate to 'social-media-writer' to generate 4 campaign routes based on approved directions
+5) Delegate to subagent_type="creative-director" to produce 3-4 approved creative directions
+6) Delegate to subagent_type="social-media-writer" to generate 4 campaign routes
 7) Present routes; user chooses what to develop further
 
-Quality bar to advance:
-- Brief: concrete audience + goal + offer + constraints; assumptions clearly labeled.
-- Research: includes at least 1 counterintuitive insight or overlooked opportunity and clear creative implications.
-- Creative directions: 3-4 distinct tensions/hooks, differentiated vs competitors.
-- Campaign routes: each ties back to a specific direction + insight; includes why it will outperform typical competitor content.
+Core principles:
+- You are responsible for output quality and strategic coherence
+- Prefer specificity over generic marketing talk
+- If any stage output is generic or unusable, re-run that stage with stricter constraints
+- Do not advance stages unless the current stage meets quality bar
 
 Communication style:
 - Get straight to the point
@@ -294,33 +295,37 @@ async def chat(context):
     convo_key = conversation_key_from_context(context)
     resume_id = CLAUDE_SESSIONS.get(convo_key)
 
-    # Configure main agent + subagent
+    # Configure main agent + subagents (no tools for subagents - text only)
     options = ClaudeAgentOptions(
         model="claude-haiku-4-5",
         system_prompt=MAIN_AGENT_PROMPT,
         allowed_tools=["Task"],
         agents={
             "brief-analyzer": AgentDefinition(
-                description="Marketing brief analyzer and structurer.",
+                description="Marketing brief analyzer and structurer. Use this to analyze and structure marketing briefs.",
                 prompt=BRIEF_ANALYZER_PROMPT,
                 model="claude-haiku-4-5",
+                tools=[],  # No tools - text response only
             ),
             "market-researcher": AgentDefinition(
                 description="Market research specialist for competitor/audience/trends and creative implications.",
                 prompt=MARKET_RESEARCHER_PROMPT,
                 model="claude-haiku-4-5",
+                tools=[],  # No tools - text response only
             ),
             "creative-director": AgentDefinition(
                 description="Creative Director who approves 3-4 differentiated creative directions from research.",
                 prompt=CREATIVE_DIRECTOR_PROMPT,
                 model="claude-haiku-4-5",
+                tools=[],  # No tools - text response only
             ),
             "social-media-writer": AgentDefinition(
                 description="Social media writer who generates campaign routes tied to approved creative directions.",
                 prompt=SOCIAL_MEDIA_WRITER_PROMPT,
                 model="claude-haiku-4-5",
+                tools=[],  # No tools - text response only
             ),
-        },        
+        },
         # Resume prior session if known (memory)
         resume=resume_id,
     )
@@ -339,11 +344,13 @@ async def chat(context):
             print(f"[DEBUG] buffer_len={len(main_agent_buffer)}")
             content = getattr(message, "content", []) or []
             for i, block in enumerate(content):
-                # Check both .type attribute and class name
-                bt = getattr(block, "type", None)
-                bn = getattr(block, "name", None)
                 class_name = type(block).__name__
-                print(f"[DEBUG]   block[{i}]: type={bt}, class={class_name}, name={bn}")
+                block_name = getattr(block, "name", None)
+                print(f"[DEBUG]   block[{i}]: class={class_name}, name={block_name}")
+                # If it's a Task, show the subagent_type
+                if class_name == "ToolUseBlock" and block_name == "Task":
+                    task_input = getattr(block, "input", {}) or {}
+                    print(f"[DEBUG]   -> subagent_type={task_input.get('subagent_type')}")
 
         # Capture session_id from init system message
         if hasattr(message, "subtype") and message.subtype == "init":
