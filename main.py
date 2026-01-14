@@ -121,7 +121,7 @@ Communication style:
 IMPORTANT:
 - Start with brief-analyzer for initial requests
 - Only proceed to market-researcher after brief confirmation
-- market-researcher searches the internet and returns real data with cited sources
+- market-researcher provides market analysis and strategic insights
 - Only proceed to social-media-writer after user confirms the research
 - social-media-writer generates campaign ideas informed by the market research findings
 - Each agent runs without asking questions (except brief-analyzer confirms once)
@@ -151,7 +151,7 @@ async def chat(context):
     options = ClaudeAgentOptions(
         model="claude-haiku-4-5",
         system_prompt=MAIN_AGENT_PROMPT,
-        allowed_tools=["Task"],  # used for subagent invocation
+        allowed_tools=["Task"],
         agents={
             "brief-analyzer": AgentDefinition(
                 description="Marketing brief analyzer and structurer. Use for analyzing user requests and creating structured marketing briefs with all necessary details.",
@@ -178,42 +178,38 @@ async def chat(context):
                 model="claude-haiku-4-5",
             ),
             "market-researcher": AgentDefinition(
-                description="Expert market researcher who searches the internet for relevant market information, competitor data, and industry trends. Use for gathering real market insights based on the user's brief.",
+                description="Expert market researcher for competitor analysis, market trends, and strategic insights. Use for analyzing the market landscape based on the user's brief.",
                 prompt=(
-                    "You are a Market Research Specialist with internet access. Be concise.\n\n"
+                    "You are a Market Research Specialist. Be concise.\n\n"
                     "Task:\n"
                     "1. Analyze the brief to identify key research areas:\n"
                     "   • Industry/market segment\n"
-                    "   • Competitors to research\n"
-                    "   • Target audience demographics\n"
-                    "   • Relevant trends and statistics\n\n"
-                    "2. Use WebSearch to find relevant information about:\n"
-                    "   • Competitor strategies and recent campaigns\n"
-                    "   • Market size and growth trends\n"
-                    "   • Industry benchmarks and statistics\n"
-                    "   • Successful marketing case studies in the sector\n"
-                    "   • Target audience behavior and preferences\n\n"
-                    "3. Compile your findings into a research report:\n"
+                    "   • Key competitors in the space\n"
+                    "   • Target audience demographics and behaviors\n"
+                    "   • Relevant market trends\n\n"
+                    "2. Provide analysis on:\n"
+                    "   • Competitor strategies and positioning\n"
+                    "   • Market dynamics and opportunities\n"
+                    "   • Target audience insights and preferences\n"
+                    "   • Effective marketing channels for this segment\n"
+                    "   • Industry best practices\n\n"
+                    "3. Compile your analysis into a research report:\n"
                     "   • Summarize key market insights\n"
                     "   • Highlight competitor activities\n"
                     "   • Note relevant trends and opportunities\n"
-                    "   • Include specific data points when available\n\n"
+                    "   • Provide actionable recommendations\n\n"
                     "4. Output format:\n"
                     "   === MARKET OVERVIEW ===\n"
-                    "   [Key market insights and statistics]\n\n"
+                    "   [Key market insights and dynamics]\n\n"
                     "   === COMPETITOR ANALYSIS ===\n"
                     "   [What competitors are doing, their strategies]\n\n"
                     "   === TRENDS & OPPORTUNITIES ===\n"
                     "   [Current trends, emerging opportunities]\n\n"
                     "   === KEY TAKEAWAYS ===\n"
                     "   [Actionable insights for the marketing strategy]\n\n"
-                    "   === SOURCES ===\n"
-                    "   [List all sources with URLs]\n\n"
-                    "IMPORTANT: Always cite your sources. Include URLs for all information gathered from the web. "
-                    "Do not make up data - only report what you find through research."
+                    "IMPORTANT: Do not ask questions. Provide your analysis directly based on the brief."
                 ),
                 model="claude-haiku-4-5",
-                tools=["WebSearch", "WebFetch"],
             ),
             "social-media-writer": AgentDefinition(
                 description="Social media content creator who generates campaign ideas and posts based on market research findings.",
