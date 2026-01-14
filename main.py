@@ -107,9 +107,10 @@ You are a Creative Marketing Strategist coordinating a multi-step workflow.
 
 Workflow:
 1. Delegate to 'brief-analyzer' → wait for user confirmation
-2. Once confirmed, delegate to 'market-researcher' → get 4 ideas
-3. Present the 4 ideas and ask user to choose one
-4. Once chosen, delegate to 'social-media-writer' with the chosen idea
+2. Once confirmed, delegate to 'market-researcher' → get market research findings with sources
+3. Present research summary to user, ask if they want to proceed to campaign ideas
+4. Once confirmed, delegate to 'social-media-writer' → generates 4 campaign ideas based on the research
+5. Present the campaign ideas and let user choose which to develop further
 
 Communication style:
 - Get straight to the point
@@ -120,7 +121,9 @@ Communication style:
 IMPORTANT:
 - Start with brief-analyzer for initial requests
 - Only proceed to market-researcher after brief confirmation
-- Only proceed to social-media-writer after user chooses an idea
+- market-researcher searches the internet and returns real data with cited sources
+- Only proceed to social-media-writer after user confirms the research
+- social-media-writer generates campaign ideas informed by the market research findings
 - Each agent runs without asking questions (except brief-analyzer confirms once)
 """.strip()
 
@@ -175,67 +178,94 @@ async def chat(context):
                 model="claude-haiku-4-5",
             ),
             "market-researcher": AgentDefinition(
-                description="Expert market research specialist for competitor analysis. Use for analyzing competitors, market trends, and generating marketing ideas.",
+                description="Expert market researcher who searches the internet for relevant market information, competitor data, and industry trends. Use for gathering real market insights based on the user's brief.",
                 prompt=(
-                    "You are a Market Research Specialist. Be concise.\n\n"
+                    "You are a Market Research Specialist with internet access. Be concise.\n\n"
                     "Task:\n"
-                    "1. Analyze the brief and target market\n"
-                    "2. Consider:\n"
-                    "   • Competitor strategies & tactics\n"
-                    "   • Market trends\n"
-                    "   • Successful campaigns\n"
-                    "   • Positioning & USPs\n"
-                    "   • Marketing channels\n\n"
-                    "3. Generate exactly 4 distinct marketing ideas:\n"
-                    "   • Each idea must be completely different from the others\n"
-                    "   • Base ideas on market insights and opportunities\n"
-                    "   • Cover: differentiation, trends, channels, tactics\n"
-                    "   • Number each idea (1-4)\n"
-                    "   • Make each idea actionable and specific\n\n"
+                    "1. Analyze the brief to identify key research areas:\n"
+                    "   • Industry/market segment\n"
+                    "   • Competitors to research\n"
+                    "   • Target audience demographics\n"
+                    "   • Relevant trends and statistics\n\n"
+                    "2. Use WebSearch to find relevant information about:\n"
+                    "   • Competitor strategies and recent campaigns\n"
+                    "   • Market size and growth trends\n"
+                    "   • Industry benchmarks and statistics\n"
+                    "   • Successful marketing case studies in the sector\n"
+                    "   • Target audience behavior and preferences\n\n"
+                    "3. Compile your findings into a research report:\n"
+                    "   • Summarize key market insights\n"
+                    "   • Highlight competitor activities\n"
+                    "   • Note relevant trends and opportunities\n"
+                    "   • Include specific data points when available\n\n"
                     "4. Output format:\n"
-                    "   [Brief market context]\n\n"
-                    "   Idea 1: [Title]\n"
-                    "   [Description]\n\n"
-                    "   Idea 2: [Title]\n"
-                    "   [Description]\n\n"
-                    "   Idea 3: [Title]\n"
-                    "   [Description]\n\n"
-                    "   Idea 4: [Title]\n"
-                    "   [Description]\n\n"
-                    "IMPORTANT: Do not ask questions. Generate all 4 ideas directly based on the brief."
+                    "   === MARKET OVERVIEW ===\n"
+                    "   [Key market insights and statistics]\n\n"
+                    "   === COMPETITOR ANALYSIS ===\n"
+                    "   [What competitors are doing, their strategies]\n\n"
+                    "   === TRENDS & OPPORTUNITIES ===\n"
+                    "   [Current trends, emerging opportunities]\n\n"
+                    "   === KEY TAKEAWAYS ===\n"
+                    "   [Actionable insights for the marketing strategy]\n\n"
+                    "   === SOURCES ===\n"
+                    "   [List all sources with URLs]\n\n"
+                    "IMPORTANT: Always cite your sources. Include URLs for all information gathered from the web. "
+                    "Do not make up data - only report what you find through research."
                 ),
                 model="claude-haiku-4-5",
+                tools=["WebSearch", "WebFetch"],
             ),
             "social-media-writer": AgentDefinition(
-                description="Social media content creator specializing in engaging posts. Use for generating social media content based on chosen marketing idea.",
+                description="Social media content creator who generates campaign ideas and posts based on market research findings.",
                 prompt=(
                     "You are a Social Media Content Creator. Be concise.\n\n"
                     "Task:\n"
-                    "1. You will receive a chosen marketing idea\n"
-                    "2. Generate exactly 4 social media posts for these platforms (in order):\n"
-                    "   • Twitter/X: Punchy, hashtags, 280 chars\n"
-                    "   • LinkedIn: Professional, value-driven\n"
-                    "   • Instagram: Visual hooks, emojis, caption\n"
-                    "   • Facebook: Conversational, engaging\n\n"
-                    "3. Each post must include:\n"
-                    "   • Strong hook\n"
-                    "   • Relevant hashtags\n"
+                    "1. Review the market research findings provided\n"
+                    "2. Generate exactly 4 distinct marketing campaign ideas based on the research insights:\n"
+                    "   • Each idea should leverage a different finding from the research\n"
+                    "   • Ideas should be creative, actionable, and tailored to the target audience\n"
+                    "   • Reference specific data points or trends from the research\n\n"
+                    "3. For each campaign idea, create a sample social media post for ONE platform:\n"
+                    "   • Idea 1: Twitter/X post (punchy, hashtags, 280 chars)\n"
+                    "   • Idea 2: LinkedIn post (professional, value-driven)\n"
+                    "   • Idea 3: Instagram post (visual hooks, emojis, caption)\n"
+                    "   • Idea 4: Facebook post (conversational, engaging)\n\n"
+                    "4. Each post must include:\n"
+                    "   • Campaign idea title and brief description\n"
+                    "   • How it connects to the research findings\n"
+                    "   • The sample post content\n"
                     "   • Visual/video suggestion\n"
-                    "   • Platform-specific formatting\n\n"
-                    "4. Output format:\n"
-                    "   === TWITTER/X ===\n"
+                    "   • Relevant hashtags\n\n"
+                    "5. Output format:\n"
+                    "   === IDEA 1: [Title] ===\n"
+                    "   Based on: [Research insight it leverages]\n"
+                    "   Campaign: [Brief description]\n"
+                    "   \n"
+                    "   Twitter/X Post:\n"
                     "   [Post content]\n"
                     "   Visual: [suggestion]\n\n"
-                    "   === LINKEDIN ===\n"
+                    "   === IDEA 2: [Title] ===\n"
+                    "   Based on: [Research insight it leverages]\n"
+                    "   Campaign: [Brief description]\n"
+                    "   \n"
+                    "   LinkedIn Post:\n"
                     "   [Post content]\n"
                     "   Visual: [suggestion]\n\n"
-                    "   === INSTAGRAM ===\n"
+                    "   === IDEA 3: [Title] ===\n"
+                    "   Based on: [Research insight it leverages]\n"
+                    "   Campaign: [Brief description]\n"
+                    "   \n"
+                    "   Instagram Post:\n"
                     "   [Post content]\n"
                     "   Visual: [suggestion]\n\n"
-                    "   === FACEBOOK ===\n"
+                    "   === IDEA 4: [Title] ===\n"
+                    "   Based on: [Research insight it leverages]\n"
+                    "   Campaign: [Brief description]\n"
+                    "   \n"
+                    "   Facebook Post:\n"
                     "   [Post content]\n"
                     "   Visual: [suggestion]\n\n"
-                    "IMPORTANT: Do not ask questions. Generate all 4 posts directly based on the chosen idea."
+                    "IMPORTANT: Do not ask questions. Generate all 4 ideas directly based on the market research."
                 ),
                 model="claude-haiku-4-5",
             ),
@@ -255,15 +285,32 @@ async def chat(context):
                 CLAUDE_SESSIONS[convo_key] = sid
             continue  # don't stream init metadata
 
-        # Check for subagent invocation in message content
-        if hasattr(message, 'content') and message.content:
+        # Skip user-role messages (these are internal prompts to subagents)
+        if hasattr(message, "role") and message.role == "user":
+            continue
+
+        # Skip tool_use messages (main agent delegating to subagents)
+        if hasattr(message, "content") and message.content:
+            is_tool_use_only = True
             for block in message.content:
-                if getattr(block, 'type', None) == 'tool_use' and getattr(block, 'name', None) == 'Task':
-                    subagent_type = block.input.get('subagent_type', 'unknown')
-                    print(f"\n Subagent invoked: {subagent_type}")
+                block_type = getattr(block, "type", None)
+                if block_type == "tool_use":
+                    if getattr(block, "name", None) == "Task":
+                        subagent_type = block.input.get("subagent_type", "unknown")
+                        print(f"\n Subagent invoked: {subagent_type}")
+                elif block_type == "text":
+                    is_tool_use_only = False
+            if is_tool_use_only and any(
+                getattr(b, "type", None) == "tool_use" for b in message.content
+            ):
+                continue
+
+        # Skip tool_result messages (internal responses)
+        if hasattr(message, "type") and message.type == "tool_result":
+            continue
 
         # Check if this message is from within a subagent's context
-        if hasattr(message, 'parent_tool_use_id') and message.parent_tool_use_id:
+        if hasattr(message, "parent_tool_use_id") and message.parent_tool_use_id:
             print("  (running inside subagent)")
 
         # Stream text chunks
