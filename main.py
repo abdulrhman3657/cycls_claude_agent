@@ -325,23 +325,25 @@ async def chat(context):
         resume=resume_id,
     )
 
-    # Track active Task tool_use IDs (subagent delegations in progress)
-    active_tasks = set()
+    # Buffer for main agent text (to handle text that precedes Task delegation)
+    main_agent_buffer = []
 
     async for message in query(prompt=user_message, options=options):
         msg_type = type(message).__name__
 
-        # DEBUG:
-        # print(f"\n=== DEBUG MESSAGE ===")
-        # print(f"type: {type(message).__name__}")
-        # print(f"attrs: {[a for a in dir(message) if not a.startswith('_')]}")
-        # if hasattr(message, 'role'): print(f"role: {message.role}")
-        # if hasattr(message, 'type'): print(f"msg.type: {message.type}")
-        # if hasattr(message, 'subtype'): print(f"subtype: {message.subtype}")
-        # if hasattr(message, 'text'): print(f"text: {message.text[:100] if message.text else None}...")
-        # if hasattr(message, 'content'): print(f"content: {message.content}")
-        # if hasattr(message, 'parent_tool_use_id'): print(f"parent_tool_use_id: {message.parent_tool_use_id}")
-        # print(f"=== END DEBUG ===\n")
+        # DEBUG
+        print(f"\n[DEBUG] msg_type={msg_type}")
+        if msg_type == "AssistantMessage":
+            parent_id = getattr(message, "parent_tool_use_id", None)
+            print(f"[DEBUG] parent_tool_use_id={parent_id}")
+            print(f"[DEBUG] buffer_len={len(main_agent_buffer)}")
+            content = getattr(message, "content", []) or []
+            for i, block in enumerate(content):
+                # Check both .type attribute and class name
+                bt = getattr(block, "type", None)
+                bn = getattr(block, "name", None)
+                class_name = type(block).__name__
+                print(f"[DEBUG]   block[{i}]: type={bt}, class={class_name}, name={bn}")
 
         # Capture session_id from init system message
         if hasattr(message, "subtype") and message.subtype == "init":
@@ -354,14 +356,8 @@ async def chat(context):
         if msg_type == "ResultMessage":
             continue
 
-        # Handle UserMessage - skip but track tool_result completions
+        # Skip UserMessage (internal tool results)
         if msg_type == "UserMessage":
-            content = getattr(message, "content", []) or []
-            for block in content:
-                # ToolResultBlock marks completion of a task
-                tool_use_id = getattr(block, "tool_use_id", None)
-                if tool_use_id and tool_use_id in active_tasks:
-                    active_tasks.discard(tool_use_id)
             continue
 
         # Handle AssistantMessage
@@ -369,32 +365,59 @@ async def chat(context):
             parent_id = getattr(message, "parent_tool_use_id", None)
             content = getattr(message, "content", []) or []
 
-            # Check for Task tool_use blocks (main agent delegating)
-            has_task_call = False
+            # Check if this is a Task delegation (use class name, not .type)
+            task_info = None
             for block in content:
-                block_type = getattr(block, "type", None)
+                class_name = type(block).__name__
                 block_name = getattr(block, "name", None)
-                if block_type == "tool_use" and block_name == "Task":
-                    has_task_call = True
-                    task_id = getattr(block, "id", None)
-                    if task_id:
-                        active_tasks.add(task_id)
+                if class_name == "ToolUseBlock" and block_name == "Task":
+                    task_input = getattr(block, "input", {}) or {}
+                    subagent = task_input.get("subagent_type", "unknown")
+                    description = task_input.get("description", "")
+                    prompt = task_input.get("prompt", "")
+                    task_info = (subagent, description, prompt)
 
-            # Filtering logic for main agent messages (parent_id is None)
+            # Main agent messages (parent_id is None)
             if parent_id is None:
-                # Always skip Task tool_use messages
-                if has_task_call:
-                    continue
-                # Skip main agent text while any subagent is active
-                if active_tasks:
-                    continue
-                # Otherwise, this is main agent's final response - show it
+                if task_info:
+                    # Task delegation - format buffered text + delegation + prompt as code block
+                    subagent, description, prompt = task_info
+                    buffered = "".join(main_agent_buffer).strip()
+                    main_agent_buffer.clear()
 
-            # Messages from subagents (parent_id is set) - always show
+                    # Build the delegation block
+                    parts = []
+                    if buffered:
+                        parts.append(f"💭 {buffered}")
+                    parts.append(f"🔄 Delegating to: {subagent} - {description}")
+                    if prompt:
+                        parts.append(f"\n📝 Prompt to subagent:\n{prompt}")
 
-        # Stream text chunks
-        for text in extract_stream_text(message):
-            yield text
+                    yield f"\n```\n{chr(10).join(parts)}\n```\n"
+                    continue
+
+                # Collect main agent text into buffer (might precede a Task)
+                for text in extract_stream_text(message):
+                    main_agent_buffer.append(text)
+                continue
+
+            # Messages from subagents (parent_id is set)
+            # First, flush any buffered main agent text as code block
+            if main_agent_buffer:
+                buffered = "".join(main_agent_buffer).strip()
+                main_agent_buffer.clear()
+                if buffered:
+                    yield f"\n```\n💭 {buffered}\n```\n"
+
+            # Stream subagent output normally
+            for text in extract_stream_text(message):
+                yield text
+
+    # Flush any remaining buffered text at the end (main agent's final response)
+    if main_agent_buffer:
+        buffered = "".join(main_agent_buffer).strip()
+        if buffered:
+            yield buffered
 
 
 # agent.deploy(prod=False)
