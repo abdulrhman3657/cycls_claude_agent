@@ -320,19 +320,19 @@ async def chat(context):
                 description="REQUIRED for step 2. Performs market research including competitor analysis, audience insights, and trend analysis. Use this after brief-analyzer. Do not use general-purpose for market research.",
                 prompt=MARKET_RESEARCHER_PROMPT,
                 model="haiku",
-                tools=["WebSearch" "WebFetch"],
+                tools=["WebSearch", "WebFetch"],
             ),
             "creative-director": AgentDefinition(
                 description="REQUIRED for step 3. Creates 3-4 differentiated creative directions from research. Use this after market-researcher. Do not use general-purpose for creative direction.",
                 prompt=CREATIVE_DIRECTOR_PROMPT,
                 model="haiku",
-                tools=["WebSearch" "WebFetch"],
+                tools=["WebSearch", "WebFetch"],
             ),
             "social-media-writer": AgentDefinition(
                 description="REQUIRED for step 4. Generates campaign routes and social media content tied to approved creative directions. Use this after creative-director. Do not use general-purpose for content writing.",
                 prompt=SOCIAL_MEDIA_WRITER_PROMPT,
                 model="haiku",
-                tools=["WebSearch" "WebFetch"],
+                tools=["WebSearch", "WebFetch"],
             ),
         },
         # Resume prior session if known (memory)
