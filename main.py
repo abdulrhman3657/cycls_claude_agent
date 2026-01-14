@@ -325,44 +325,72 @@ async def chat(context):
         resume=resume_id,
     )
 
+    # Track active Task tool_use IDs (subagent delegations in progress)
+    active_tasks = set()
+
     async for message in query(prompt=user_message, options=options):
+        msg_type = type(message).__name__
 
-        # print(message) # dump all of the output
+        # DEBUG:
+        # print(f"\n=== DEBUG MESSAGE ===")
+        # print(f"type: {type(message).__name__}")
+        # print(f"attrs: {[a for a in dir(message) if not a.startswith('_')]}")
+        # if hasattr(message, 'role'): print(f"role: {message.role}")
+        # if hasattr(message, 'type'): print(f"msg.type: {message.type}")
+        # if hasattr(message, 'subtype'): print(f"subtype: {message.subtype}")
+        # if hasattr(message, 'text'): print(f"text: {message.text[:100] if message.text else None}...")
+        # if hasattr(message, 'content'): print(f"content: {message.content}")
+        # if hasattr(message, 'parent_tool_use_id'): print(f"parent_tool_use_id: {message.parent_tool_use_id}")
+        # print(f"=== END DEBUG ===\n")
 
-        # Capture session_id from init system message (official pattern)
+        # Capture session_id from init system message
         if hasattr(message, "subtype") and message.subtype == "init":
             sid = (getattr(message, "data", None) or {}).get("session_id")
             if sid:
                 CLAUDE_SESSIONS[convo_key] = sid
-            continue  # don't stream init metadata
-
-        # Skip user-role messages (these are internal prompts to subagents)
-        if hasattr(message, "role") and message.role == "user":
             continue
 
-        # Skip tool_use messages (main agent delegating to subagents)
-        if hasattr(message, "content") and message.content:
-            is_tool_use_only = True
-            for block in message.content:
+        # Skip ResultMessage (final status)
+        if msg_type == "ResultMessage":
+            continue
+
+        # Handle UserMessage - skip but track tool_result completions
+        if msg_type == "UserMessage":
+            content = getattr(message, "content", []) or []
+            for block in content:
+                # ToolResultBlock marks completion of a task
+                tool_use_id = getattr(block, "tool_use_id", None)
+                if tool_use_id and tool_use_id in active_tasks:
+                    active_tasks.discard(tool_use_id)
+            continue
+
+        # Handle AssistantMessage
+        if msg_type == "AssistantMessage":
+            parent_id = getattr(message, "parent_tool_use_id", None)
+            content = getattr(message, "content", []) or []
+
+            # Check for Task tool_use blocks (main agent delegating)
+            has_task_call = False
+            for block in content:
                 block_type = getattr(block, "type", None)
-                if block_type == "tool_use":
-                    if getattr(block, "name", None) == "Task":
-                        subagent_type = block.input.get("subagent_type", "unknown")
-                        print(f"\n Subagent invoked: {subagent_type}")
-                elif block_type == "text":
-                    is_tool_use_only = False
-            if is_tool_use_only and any(
-                getattr(b, "type", None) == "tool_use" for b in message.content
-            ):
-                continue
+                block_name = getattr(block, "name", None)
+                if block_type == "tool_use" and block_name == "Task":
+                    has_task_call = True
+                    task_id = getattr(block, "id", None)
+                    if task_id:
+                        active_tasks.add(task_id)
 
-        # Skip tool_result messages (internal responses)
-        if hasattr(message, "type") and message.type == "tool_result":
-            continue
+            # Filtering logic for main agent messages (parent_id is None)
+            if parent_id is None:
+                # Always skip Task tool_use messages
+                if has_task_call:
+                    continue
+                # Skip main agent text while any subagent is active
+                if active_tasks:
+                    continue
+                # Otherwise, this is main agent's final response - show it
 
-        # Check if this message is from within a subagent's context
-        if hasattr(message, "parent_tool_use_id") and message.parent_tool_use_id:
-            print("  (running inside subagent)")
+            # Messages from subagents (parent_id is set) - always show
 
         # Stream text chunks
         for text in extract_stream_text(message):
