@@ -254,7 +254,7 @@ async def chat(context):
                 description="REQUIRED for step 1. Analyzes and structures marketing briefs. Always use this agent FIRST when given any marketing brief or campaign request. Do not use general-purpose for brief analysis.",
                 prompt=BRIEF_ANALYZER_PROMPT,
                 model="haiku",
-                tools=["WebSearch", "WebFetch"],
+                tools=[],
             ),
             "market-researcher": AgentDefinition(
                 description="REQUIRED for step 2. Performs market research including competitor analysis, audience insights, and trend analysis. Use this after brief-analyzer. Do not use general-purpose for market research.",
@@ -266,7 +266,7 @@ async def chat(context):
                 description="REQUIRED for step 3. Creates 3-4 differentiated creative directions from research. Use this after market-researcher. Do not use general-purpose for creative direction.",
                 prompt=CREATIVE_DIRECTOR_PROMPT,
                 model="haiku",
-                tools=["WebSearch", "WebFetch"],
+                tools=[],
             ),
             "social-media-writer": AgentDefinition(
                 description="REQUIRED for step 4. Generates campaign routes and social media content tied to approved creative directions. Use this after creative-director. Do not use general-purpose for content writing.",
