@@ -11,7 +11,7 @@ A multi-agent marketing workflow powered by Claude AI and the Cycls framework. T
 
 ## Requirements
 
-- `cycls` == 0.0.2.62
+- `cycls==0.0.2.62`
 - `claude-agent-sdk`
 
 
