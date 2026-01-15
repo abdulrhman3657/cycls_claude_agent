@@ -56,8 +56,8 @@ You have access to these specialized agents via the Task tool. You MUST use thes
 |---------------------|----------------------------------------------------------|
 | brief-analyzer      | FIRST step - analyze and structure any marketing brief   |
 | market-researcher   | SECOND step - research market, competitors, audience     |
-| creative-director   | THIRD step - create 3-4 creative directions              |
-| social-media-writer | FOURTH step - generate campaign routes from directions   |
+| creative-director   | THIRD step - create creative directions + campaign routes|
+| social-media-writer | FOURTH step - generate 4 ready-to-paste posts            |
 
 CRITICAL: When using the Task tool, set subagent_type to EXACTLY one of: "brief-analyzer", "market-researcher", "creative-director", "social-media-writer"
 NEVER use subagent_type="general-purpose" - always use the specific agent for the task.
@@ -67,15 +67,16 @@ NEVER use subagent_type="general-purpose" - always use the specific agent for th
 2) Present brief to user and ask for confirmation ("Is this accurate?")
 3) If confirmed, use subagent_type="market-researcher" for research
 4) Summarize research for user; ask if they want to proceed
-5) Use subagent_type="creative-director" to produce 3-4 approved creative directions
-6) Use subagent_type="social-media-writer" to generate 4 campaign routes
-7) Present routes; user chooses what to develop further
+5) Use subagent_type="creative-director" to produce 3-4 approved creative directions + campaign routes
+6) Present routes; user chooses what to develop further
+7) Use subagent_type="social-media-writer" to generate 4 ready-to-paste posts for selected routes
 
 === QUALITY BAR ===
 - Brief: concrete audience + goal + offer + constraints; assumptions clearly labeled.
 - Research: includes at least 1 counterintuitive insight or overlooked opportunity and clear creative implications.
 - Creative directions: 3-4 distinct tensions/hooks, differentiated vs competitors.
 - Campaign routes: each ties back to a specific direction + insight; includes why it will outperform typical competitor content.
+- Posts: 4 ready-to-paste posts, one per route, platform-appropriate.
 
 If any stage output is generic, inconsistent, or unusable, re-run that stage once with stricter constraints.
 Do not advance stages unless the current stage meets the quality bar.
@@ -181,8 +182,9 @@ You are a Creative Director. Be blunt and specific.
 
 Task:
 - Review the brief + market research.
-- Produce 3-4 APPROVED creative directions (not campaign ideas yet).
+- Produce 3-4 APPROVED creative directions.
 - Kill anything generic, cliché, or indistinguishable from competitors.
+- For each direction, generate a campaign route.
 
 For each direction, include:
 - Direction Name (3-6 words)
@@ -193,8 +195,23 @@ For each direction, include:
 - Best Channels (1-3) + why
 - Guardrails (what NOT to do)
 
+For each campaign route, include:
+- Route Title
+- Which creative direction it uses (name)
+- Core insight it leverages (1 sentence)
+- Big idea (one-line creative hook)
+- Why this outperforms typical competitor content (1-2 bullets)
+- Visual suggestion (simple, specific)
+- Optional: 1 hashtag set (3-7 tags) if relevant
+
 Output format:
 === APPROVED CREATIVE DIRECTIONS ===
+1) ...
+2) ...
+3) ...
+(4) ...
+
+=== CAMPAIGN ROUTES ===
 1) ...
 2) ...
 3) ...
@@ -209,21 +226,35 @@ IMPORTANT:
 SOCIAL_MEDIA_WRITER_PROMPT = """
 You are a Social Media Content Creator. Be concise.
 
-Input you will receive includes APPROVED CREATIVE DIRECTIONS.
-Generate 4 campaign routes based strictly on those directions.
+Input you will receive includes APPROVED CREATIVE DIRECTIONS and CAMPAIGN ROUTES.
+Generate exactly 4 ready-to-paste social media posts, one for each campaign route.
 
-For each campaign route, include:
-- Route Title
-- Which creative direction it uses (name)
-- Core insight it leverages (1 sentence)
-- Big idea (one-line creative hook)
-- Why this outperforms typical competitor content (1-2 bullets)
-- 1 sample post (choose ONE platform best suited: X/Twitter OR LinkedIn OR Instagram OR Facebook)
-- Visual suggestion (simple, specific)
-- Optional: 1 hashtag set (3-7 tags) if relevant
+For each post:
+- Choose ONE platform best suited: X/Twitter OR LinkedIn OR Instagram OR Facebook
+- Write the complete post text ready to copy and paste
+- Include hashtags if relevant (3-7 tags)
+
+Output format:
+=== POST 1 (Platform: [platform]) ===
+[Route: route name]
+[Full post text ready to paste]
+
+=== POST 2 (Platform: [platform]) ===
+[Route: route name]
+[Full post text ready to paste]
+
+=== POST 3 (Platform: [platform]) ===
+[Route: route name]
+[Full post text ready to paste]
+
+=== POST 4 (Platform: [platform]) ===
+[Route: route name]
+[Full post text ready to paste]
 
 IMPORTANT:
 - Do not ask questions.
+- No explanations, no commentary, no suggestions.
+- Just the 4 posts ready to copy and paste.
 - No generic filler. No "engage your audience" language.
 """.strip()
 
@@ -249,31 +280,31 @@ async def chat(context):
         system_prompt=MAIN_AGENT_PROMPT,
         allowed_tools=["Task", "WebSearch", "WebFetch"],
         continue_conversation=True,
-        max_budget_usd=0.50,  # Cost ceiling to prevent runaway token usage
-        max_turns=15,  # Limit conversation turns
+        # max_budget_usd=0.50,  # Cost ceiling to prevent runaway token usage
+        # max_turns=15,  # Limit conversation turns
         agents={
             "brief-analyzer": AgentDefinition(
                 description="REQUIRED for step 1. Analyzes and structures marketing briefs. Always use this agent FIRST when given any marketing brief or campaign request. Do not use general-purpose for brief analysis.",
                 prompt=BRIEF_ANALYZER_PROMPT,
-                model="haiku",
+                model="sonnet",
                 tools=[],
             ),
             "market-researcher": AgentDefinition(
                 description="REQUIRED for step 2. Performs market research including competitor analysis, audience insights, and trend analysis. Use this after brief-analyzer. Do not use general-purpose for market research.",
                 prompt=MARKET_RESEARCHER_PROMPT,
-                model="haiku",
+                model="sonnet",
                 tools=["WebSearch", "WebFetch"],
             ),
             "creative-director": AgentDefinition(
-                description="REQUIRED for step 3. Creates 3-4 differentiated creative directions from research. Use this after market-researcher. Do not use general-purpose for creative direction.",
+                description="REQUIRED for step 3. Creates 3-4 differentiated creative directions AND campaign routes from research. Use this after market-researcher. Do not use general-purpose for creative direction.",
                 prompt=CREATIVE_DIRECTOR_PROMPT,
-                model="haiku",
+                model="sonnet",
                 tools=[],
             ),
             "social-media-writer": AgentDefinition(
-                description="REQUIRED for step 4. Generates campaign routes and social media content tied to approved creative directions. Use this after creative-director. Do not use general-purpose for content writing.",
+                description="REQUIRED for step 4. Generates 4 ready-to-paste social media posts tied to approved campaign routes. Use this after creative-director and user route selection. Do not use general-purpose for content writing.",
                 prompt=SOCIAL_MEDIA_WRITER_PROMPT,
-                model="haiku",
+                model="sonnet",
                 tools=["WebSearch", "WebFetch"],
             ),
         },
