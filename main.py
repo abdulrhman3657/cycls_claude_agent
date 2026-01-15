@@ -249,6 +249,8 @@ async def chat(context):
         system_prompt=MAIN_AGENT_PROMPT,
         allowed_tools=["Task", "WebSearch", "WebFetch"],
         continue_conversation=True,
+        max_budget_usd=0.50,  # Cost ceiling to prevent runaway token usage
+        max_turns=15,  # Limit conversation turns
         agents={
             "brief-analyzer": AgentDefinition(
                 description="REQUIRED for step 1. Analyzes and structures marketing briefs. Always use this agent FIRST when given any marketing brief or campaign request. Do not use general-purpose for brief analysis.",
