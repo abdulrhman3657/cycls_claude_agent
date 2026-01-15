@@ -24,8 +24,6 @@ The agent runs a gated workflow with quality checks at each stage:
 3. **Creative Direction** - Creative Director produces 3-4 approved directions with campaign routes; user selects which to develop
 4. **Content Generation** - Social Media Writer generates 4 ready-to-paste posts, one per campaign route
 
-If any stage output is generic or unusable, the workflow re-runs that stage with stricter constraints.
-
 ## Architecture
 
 The main agent (Sonnet) coordinates 4 specialized subagents via the Claude Agent SDK's Task tool:
