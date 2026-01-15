@@ -232,7 +232,7 @@ IMPORTANT:
 # ---------------------------
 @agent("creative-marketing-strategist", title="Creative Marketing Agent", auth=True)
 async def chat(context):
-    from claude_agent_sdk import query, ClaudeAgentOptions, AgentDefinition, AssistantMessage, TextBlock
+    from claude_agent_sdk import ClaudeSDKClient, ClaudeAgentOptions, AgentDefinition, AssistantMessage, TextBlock
 
     # Ensure ANTHROPIC_API_KEY is in env (Claude Agent SDK reads env)
     api_key = get_env("ANTHROPIC_API_KEY")
@@ -280,85 +280,88 @@ async def chat(context):
     # Buffer for main agent text (to handle text that precedes Task delegation)
     main_agent_buffer = []
 
-    # Stream responses - Agent SDK handles tool execution autonomously
-    async for message in query(prompt=user_message, options=options):
-        msg_type = type(message).__name__
+    # Stream responses using ClaudeSDKClient for bidirectional streaming
+    async with ClaudeSDKClient(options=options) as client:
+        await client.query(user_message)
 
-        # DEBUG - log all message types and attributes
-        print(f"\n[DEBUG] msg_type={msg_type}")
-        print(f"[DEBUG] message attrs: {[a for a in dir(message) if not a.startswith('_')]}")
+        async for message in client.receive_response():
+            msg_type = type(message).__name__
 
-        if isinstance(message, AssistantMessage):
-            parent_id = getattr(message, "parent_tool_use_id", None)
-            print(f"[DEBUG] parent_tool_use_id={parent_id}")
-            print(f"[DEBUG] buffer_len={len(main_agent_buffer)}")
-            print(f"[DEBUG] content blocks: {len(message.content)}")
-            for i, block in enumerate(message.content):
-                block_type = type(block).__name__
-                print(f"[DEBUG]   block[{i}]: {block_type}")
-                if block_type == "ToolUseBlock":
-                    print(f"[DEBUG]     tool_name={getattr(block, 'name', None)}")
-                    tool_input = getattr(block, "input", {}) or {}
-                    if block.name == "Task":
-                        print(f"[DEBUG]     subagent_type={tool_input.get('subagent_type')}")
-        else:
-            # Log non-AssistantMessage details
-            print(f"[DEBUG] non-assistant message: {message}")
+            # DEBUG - log all message types and attributes
+            print(f"\n[DEBUG] msg_type={msg_type}")
+            print(f"[DEBUG] message attrs: {[a for a in dir(message) if not a.startswith('_')]}")
 
-        # Skip non-assistant messages
-        if not isinstance(message, AssistantMessage):
-            continue
+            if isinstance(message, AssistantMessage):
+                parent_id = getattr(message, "parent_tool_use_id", None)
+                print(f"[DEBUG] parent_tool_use_id={parent_id}")
+                print(f"[DEBUG] buffer_len={len(main_agent_buffer)}")
+                print(f"[DEBUG] content blocks: {len(message.content)}")
+                for i, block in enumerate(message.content):
+                    block_type = type(block).__name__
+                    print(f"[DEBUG]   block[{i}]: {block_type}")
+                    if block_type == "ToolUseBlock":
+                        print(f"[DEBUG]     tool_name={getattr(block, 'name', None)}")
+                        tool_input = getattr(block, "input", {}) or {}
+                        if block.name == "Task":
+                            print(f"[DEBUG]     subagent_type={tool_input.get('subagent_type')}")
+            else:
+                # Log non-AssistantMessage details
+                print(f"[DEBUG] non-assistant message: {message}")
 
-        parent_id = getattr(message, "parent_tool_use_id", None)
-        content = message.content or []
-
-        # Check if this is a Task delegation
-        task_info = None
-        for block in content:
-            if type(block).__name__ == "ToolUseBlock" and block.name == "Task":
-                tool_input = getattr(block, "input", {}) or {}
-                subagent = tool_input.get("subagent_type", "unknown")
-                description = tool_input.get("description", "")
-                prompt = tool_input.get("prompt", "")
-                task_info = (subagent, description, prompt)
-
-        # Main agent messages (parent_id is None)
-        if parent_id is None:
-            if task_info:
-                # Task delegation - format buffered text + delegation + prompt as code block
-                subagent, description, prompt = task_info
-                buffered = "".join(main_agent_buffer).strip()
-                main_agent_buffer.clear()
-
-                # Build the delegation block
-                parts = []
-                if buffered:
-                    parts.append(f"💭 {buffered}")
-                parts.append(f"🔄 Delegating to: {subagent} - {description}")
-                if prompt:
-                    parts.append(f"\n📝 Prompt to subagent:\n{prompt}")
-
-                yield f"\n```\n{chr(10).join(parts)}\n```\n"
+            # Skip non-assistant messages
+            if not isinstance(message, AssistantMessage):
                 continue
 
-            # Collect main agent text into buffer (might precede a Task)
+            parent_id = getattr(message, "parent_tool_use_id", None)
+            content = message.content or []
+
+            # Check if this is a Task delegation
+            task_info = None
+            for block in content:
+                if type(block).__name__ == "ToolUseBlock" and block.name == "Task":
+                    tool_input = getattr(block, "input", {}) or {}
+                    subagent = tool_input.get("subagent_type", "unknown")
+                    description = tool_input.get("description", "")
+                    prompt = tool_input.get("prompt", "")
+                    task_info = (subagent, description, prompt)
+
+            # Main agent messages (parent_id is None)
+            if parent_id is None:
+                if task_info:
+                    # Task delegation - format buffered text + delegation + prompt as code block
+                    subagent, description, prompt = task_info
+                    buffered = "".join(main_agent_buffer).strip()
+                    main_agent_buffer.clear()
+
+                    # Build the delegation block
+                    parts = []
+                    if buffered:
+                        parts.append(f"💭 {buffered}")
+                    parts.append(f"🔄 Delegating to: {subagent} - {description}")
+                    if prompt:
+                        parts.append(f"\n📝 Prompt to subagent:\n{prompt}")
+
+                    yield f"\n```\n{chr(10).join(parts)}\n```\n"
+                    continue
+
+                # Collect main agent text into buffer (might precede a Task)
+                for block in content:
+                    if isinstance(block, TextBlock):
+                        main_agent_buffer.append(block.text)
+                continue
+
+            # Messages from subagents (parent_id is set)
+            # First, flush any buffered main agent text as code block
+            if main_agent_buffer:
+                buffered = "".join(main_agent_buffer).strip()
+                main_agent_buffer.clear()
+                if buffered:
+                    yield f"\n```\n💭 {buffered}\n```\n"
+
+            # Stream subagent output normally
             for block in content:
                 if isinstance(block, TextBlock):
-                    main_agent_buffer.append(block.text)
-            continue
-
-        # Messages from subagents (parent_id is set)
-        # First, flush any buffered main agent text as code block
-        if main_agent_buffer:
-            buffered = "".join(main_agent_buffer).strip()
-            main_agent_buffer.clear()
-            if buffered:
-                yield f"\n```\n💭 {buffered}\n```\n"
-
-        # Stream subagent output normally
-        for block in content:
-            if isinstance(block, TextBlock):
-                yield block.text
+                    yield block.text
 
     # Flush any remaining buffered text at the end (main agent's final response)
     if main_agent_buffer:
