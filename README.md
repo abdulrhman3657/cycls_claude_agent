@@ -22,7 +22,7 @@ The agent runs a gated workflow with quality checks at each stage:
 1. **Brief Analysis** - User submits a marketing brief; Brief Analyzer structures it with assumptions marked and strategic risks identified; asks for confirmation
 2. **Market Research** - Market Researcher provides insights with counterintuitive findings and creative implications for each section
 3. **Creative Direction** - Creative Director produces 3-4 approved directions with campaign routes; user selects which to develop
-4. **Content Generation** - Social Media Writer generates 4 ready-to-paste posts, one per campaign route
+4. **Content Generation** - Social Media Writer generates 4 ready-to-paste posts for the chosen route, each exploring a different angle
 
 ## Architecture
 

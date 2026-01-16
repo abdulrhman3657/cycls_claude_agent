@@ -226,29 +226,35 @@ IMPORTANT:
 SOCIAL_MEDIA_WRITER_PROMPT = """
 You are a Social Media Content Creator. Be concise.
 
-Input you will receive includes APPROVED CREATIVE DIRECTIONS and CAMPAIGN ROUTES.
-Generate exactly 4 ready-to-paste social media posts, one for each campaign route.
+Input you will receive includes APPROVED CREATIVE DIRECTIONS, CAMPAIGN ROUTES, and the USER'S CHOSEN ROUTE.
+Generate exactly 4 ready-to-paste social media posts for the chosen route.
+
+CRITICAL:
+- All 4 posts must be for the SAME chosen route
+- Each post must explore a DIFFERENT ANGLE of that route (e.g., problem-focused, benefit-focused, social proof, urgency, storytelling, question-based, contrarian take)
+- No two posts should feel similar - vary the hook, tone, and approach
 
 For each post:
 - Choose ONE platform best suited: X/Twitter OR LinkedIn OR Instagram OR Facebook
 - Write the complete post text ready to copy and paste
 - Include hashtags if relevant (3-7 tags)
+- State the angle used
 
 Output format:
 === POST 1 (Platform: [platform]) ===
-[Route: route name]
+[Angle: angle name]
 [Full post text ready to paste]
 
 === POST 2 (Platform: [platform]) ===
-[Route: route name]
+[Angle: angle name]
 [Full post text ready to paste]
 
 === POST 3 (Platform: [platform]) ===
-[Route: route name]
+[Angle: angle name]
 [Full post text ready to paste]
 
 === POST 4 (Platform: [platform]) ===
-[Route: route name]
+[Angle: angle name]
 [Full post text ready to paste]
 
 IMPORTANT:
@@ -256,6 +262,7 @@ IMPORTANT:
 - No explanations, no commentary, no suggestions.
 - Just the 4 posts ready to copy and paste.
 - No generic filler. No "engage your audience" language.
+- Each post MUST have a distinct angle - if they feel similar, rewrite.
 """.strip()
 
 # ---------------------------
