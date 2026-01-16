@@ -391,12 +391,12 @@ async def chat(context):
                 continue
 
             # Messages from subagents (parent_id is set)
-            # First, flush any buffered main agent text as code block
+            # Flush any buffered main agent text (without code block - it's just context)
             if main_agent_buffer:
                 buffered = "".join(main_agent_buffer).strip()
                 main_agent_buffer.clear()
                 if buffered:
-                    yield f"\n```\n💭 {buffered}\n```\n"
+                    yield f"\n{buffered}\n\n"
 
             # Stream subagent output normally
             for block in content:
